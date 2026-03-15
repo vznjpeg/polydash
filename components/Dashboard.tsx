@@ -36,38 +36,60 @@ export default function Dashboard() {
       // Fetch from Gamma API
       const response = await axios.get('https://gamma-api.polymarket.com/markets', {
         params: {
-          limit: 200,
+          limit: 250,
+          order: 'volume24hr',
         },
       })
 
-      // Filter markets by probability ranges
+      // Parse and filter markets by probability ranges
       const filteredMarkets = response.data
         .filter((market: any) => {
-          const yesPrice = market.lastPriceYes || 0
-          const probability = yesPrice * 100
+          if (!market.question || market.closed) return false
 
-          // Calculate which filter range this market belongs to
-          if (probability >= 70) {
-            return true
+          try {
+            // Parse outcomePrices - it's a JSON string like "[0.75, 0.25]"
+            const prices = JSON.parse(market.outcomePrices || '[]')
+            const yesPrice = parseFloat(prices[0]) || 0
+
+            // Only include markets with valid prices
+            if (yesPrice > 0 && yesPrice < 1) {
+              const probability = yesPrice * 100
+              return probability >= 70 && probability <= 100
+            }
+            return false
+          } catch (e) {
+            return false
           }
-          return false
         })
-        .map((market: any) => ({
-          id: market.id,
-          question: market.question,
-          lastPriceYes: market.lastPriceYes,
-          lastPriceNo: market.lastPriceNo,
-          volume24h: market.volume24h,
-          outcomes: market.outcomes,
-          probability: (market.lastPriceYes || 0) * 100,
-        }))
+        .map((market: any) => {
+          const prices = JSON.parse(market.outcomePrices || '[]')
+          const yesPrice = parseFloat(prices[0]) || 0
+          const outcomes = market.outcomes ? JSON.parse(market.outcomes) : ['Yes', 'No']
 
-      setMarkets(filteredMarkets)
+          return {
+            id: market.id,
+            question: market.question,
+            lastPriceYes: yesPrice,
+            lastPriceNo: parseFloat(prices[1]) || 0,
+            volume24h: market.volume24hr || 0,
+            outcomes,
+            probability: yesPrice * 100,
+          }
+        })
+        .sort((a: Market, b: Market) => (b.probability || 0) - (a.probability || 0))
+
+      if (filteredMarkets.length === 0) {
+        console.warn('No valid markets found, using mock data')
+        setMarkets(generateMockMarkets())
+        setError('Using demo data - live data unavailable')
+      } else {
+        setMarkets(filteredMarkets)
+      }
     } catch (err) {
       console.error('Error fetching markets:', err)
-      setError('Failed to fetch markets. Please try again.')
-      // Set mock data for development
+      console.log('Using mock data due to API error')
       setMarkets(generateMockMarkets())
+      setError('Using demo data - unable to fetch live markets')
     } finally {
       setLoading(false)
     }
@@ -185,25 +207,48 @@ export default function Dashboard() {
 
 function generateMockMarkets(): Market[] {
   const mockQuestions = [
-    'Will BTC reach $100k by end of 2024?',
-    'Will Trump win the 2024 election?',
-    'Will the Federal Reserve cut rates in Q2 2024?',
-    'Will Ethereum 2.0 be fully completed by 2024?',
-    'Will the S&P 500 hit a new all-time high in 2024?',
-    'Will inflation fall below 3% by Q4 2024?',
-    'Will Apple stock outperform the S&P 500 in 2024?',
-    'Will AGI be achieved by 2025?',
-    'Will Tesla deliver 2M vehicles in 2024?',
-    'Will US GDP growth exceed 2.5% in 2024?',
+    // 90-99.9% range
+    'Will Bitcoin be above $40,000 at end of 2024?',
+    'Will US inflation remain below 5% in Q2 2024?',
+    'Will the Federal Reserve hold rates steady in March 2024?',
+
+    // 80-90% range
+    'Will Apple stock outperform the S&P 500 in Q1 2024?',
+    'Will the S&P 500 close above 5000 by June 2024?',
+    'Will tech stocks outperform energy in 2024?',
+
+    // 70-80% range
+    'Will gold prices remain above $1800/oz in 2024?',
+    'Will US unemployment stay below 4.5% through 2024?',
+    'Will the Euro strengthen against the Dollar in H1 2024?',
+    'Will renewable energy investments increase in 2024?',
+    'Will there be a recession in the US in 2024?',
+    'Will productivity growth exceed 1% in 2024?',
   ]
 
-  return mockQuestions.map((question, idx) => ({
-    id: `mock-${idx}`,
-    question,
-    lastPriceYes: 0.85 + Math.random() * 0.14,
-    lastPriceNo: 0.01 + Math.random() * 0.15,
-    volume24h: Math.floor(Math.random() * 1000000),
-    outcomes: ['Yes', 'No'],
-    probability: 85 + Math.random() * 14,
-  }))
+  return mockQuestions.map((question, idx) => {
+    let probability: number
+
+    if (idx < 3) {
+      // 90-99.9%
+      probability = 92 + Math.random() * 7.5
+    } else if (idx < 6) {
+      // 80-90%
+      probability = 82 + Math.random() * 8
+    } else {
+      // 70-80%
+      probability = 72 + Math.random() * 8
+    }
+
+    const yesPrice = probability / 100
+    return {
+      id: `mock-${idx}`,
+      question,
+      lastPriceYes: yesPrice,
+      lastPriceNo: 1 - yesPrice,
+      volume24h: Math.floor(500000 + Math.random() * 1500000),
+      outcomes: ['Yes', 'No'],
+      probability,
+    }
+  })
 }
