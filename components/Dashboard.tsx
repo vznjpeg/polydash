@@ -34,17 +34,13 @@ export default function Dashboard() {
       setLoading(true)
       setError(null)
 
-      // Fetch from Gamma API
-      const response = await axios.get('https://gamma-api.polymarket.com/markets', {
-        params: {
-          limit: 250,
-          order: 'volume24hr',
-        },
-      })
+      // Fetch from local API route (which proxies to Gamma API)
+      const response = await axios.get('/api/markets')
 
       // Parse and filter markets by probability ranges
       const filteredMarkets = response.data
         .filter((market: any) => {
+          // Skip closed markets and markets without questions
           if (!market.question || market.closed) return false
 
           try {
@@ -52,10 +48,15 @@ export default function Dashboard() {
             const prices = JSON.parse(market.outcomePrices || '[]')
             const yesPrice = parseFloat(prices[0]) || 0
 
-            // Only include markets with valid prices
+            // Only include markets with:
+            // 1. Valid prices (between 0 and 1)
+            // 2. Probability in 70-100% range
+            // 3. Some volume or activity (to avoid stale markets)
             if (yesPrice > 0 && yesPrice < 1) {
               const probability = yesPrice * 100
-              return probability >= 70 && probability <= 100
+              const hasActivity = market.volume24hr > 0 || market.bestBid > 0 || market.bestAsk > 0
+
+              return probability >= 70 && probability <= 100 && hasActivity
             }
             return false
           } catch (e) {
