@@ -4,6 +4,7 @@ import { ExternalLink } from 'lucide-react'
 
 interface Market {
   id: string
+  slug?: string
   question: string
   lastPriceYes?: number
   lastPriceNo?: number
@@ -87,9 +88,12 @@ export default function MarketCard({ market }: MarketCardProps) {
 
       {/* Action Button */}
       <button
-        onClick={() =>
-          window.open(`https://polymarket.com/market/${market.id}`, '_blank')
-        }
+        onClick={() => {
+          const url = market.slug
+            ? `https://polymarket.com/market/${market.slug}`
+            : `https://polymarket.com/markets`
+          window.open(url, '_blank')
+        }}
         className="btn-neumorphic-primary w-full text-sm"
       >
         View on Polymarket

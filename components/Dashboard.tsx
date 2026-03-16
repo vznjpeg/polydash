@@ -8,6 +8,7 @@ import FilterTabs from './FilterTabs'
 
 interface Market {
   id: string
+  slug?: string
   question: string
   lastPriceYes?: number
   lastPriceNo?: number
@@ -68,6 +69,7 @@ export default function Dashboard() {
 
           return {
             id: market.id,
+            slug: market.slug,
             question: market.question,
             lastPriceYes: yesPrice,
             lastPriceNo: parseFloat(prices[1]) || 0,
