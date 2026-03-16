@@ -15,15 +15,16 @@ interface Market {
   volume24h?: number
   outcomes: string[]
   probability?: number
+  createdAt?: string
+  bestBid?: number
+  bestAsk?: number
 }
 
-type FilterType = '90-99.9' | '80-90' | '70-80'
-
 export default function Dashboard() {
-  const [markets, setMarkets] = useState<Market[]>([])
+  const [allMarkets, setAllMarkets] = useState<Market[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [activeFilter, setActiveFilter] = useState<FilterType>('90-99.9')
+  const [activeTab, setActiveTab] = useState<string>('prob-90-99.9')
 
   useEffect(() => {
     fetchMarkets()
@@ -77,45 +78,82 @@ export default function Dashboard() {
             volume24h: market.volume24hr || 0,
             outcomes,
             probability: yesPrice * 100,
+            createdAt: market.createdAt,
+            bestBid: market.bestBid || 0,
+            bestAsk: market.bestAsk || 0,
           }
         })
-        .sort((a: Market, b: Market) => (b.probability || 0) - (a.probability || 0))
 
       if (filteredMarkets.length === 0) {
         console.warn('No valid markets found, using mock data')
-        setMarkets(generateMockMarkets())
+        setAllMarkets(generateMockMarkets())
         setError('Using demo data - live data unavailable')
       } else {
-        setMarkets(filteredMarkets)
+        setAllMarkets(filteredMarkets)
       }
     } catch (err) {
       console.error('Error fetching markets:', err)
       console.log('Using mock data due to API error')
-      setMarkets(generateMockMarkets())
+      setAllMarkets(generateMockMarkets())
       setError('Using demo data - unable to fetch live markets')
     } finally {
       setLoading(false)
     }
   }
 
-  const getFilteredMarkets = () => {
-    return markets.filter((market) => {
-      const prob = market.probability || 0
+  const getFilteredAndSortedMarkets = () => {
+    let filtered = allMarkets
 
-      switch (activeFilter) {
-        case '90-99.9':
-          return prob >= 90 && prob < 100
-        case '80-90':
-          return prob >= 80 && prob < 90
-        case '70-80':
-          return prob >= 70 && prob < 80
-        default:
-          return true
-      }
-    })
+    // Apply filtering based on active tab
+    if (activeTab === 'prob-90-99.9') {
+      filtered = filtered.filter((m) => (m.probability || 0) >= 90 && (m.probability || 0) < 100)
+    } else if (activeTab === 'prob-80-90') {
+      filtered = filtered.filter((m) => (m.probability || 0) >= 80 && (m.probability || 0) < 90)
+    } else if (activeTab === 'prob-70-80') {
+      filtered = filtered.filter((m) => (m.probability || 0) >= 70 && (m.probability || 0) < 80)
+    } else if (activeTab === 'volume') {
+      // Sort by volume, no additional filtering
+      filtered = filtered.sort((a, b) => (b.volume24h || 0) - (a.volume24h || 0)).slice(0, 30)
+    } else if (activeTab === 'trending') {
+      // Sort by recent bid/ask activity (bestBid + bestAsk as proxy for recent trades)
+      filtered = filtered
+        .filter((m) => (m.bestBid || 0) > 0 || (m.bestAsk || 0) > 0)
+        .sort((a, b) => ((b.bestBid || 0) + (b.bestAsk || 0)) - ((a.bestBid || 0) + (a.bestAsk || 0)))
+        .slice(0, 30)
+    } else if (activeTab === 'new') {
+      // Sort by creation date (newest first)
+      filtered = filtered
+        .sort((a, b) => {
+          const dateA = new Date(a.createdAt || 0).getTime()
+          const dateB = new Date(b.createdAt || 0).getTime()
+          return dateB - dateA
+        })
+        .slice(0, 30)
+    }
+
+    return filtered
   }
 
-  const filteredMarkets = getFilteredMarkets()
+  const displayedMarkets = getFilteredAndSortedMarkets()
+
+  const getTabLabel = (tab: string) => {
+    switch (tab) {
+      case 'prob-90-99.9':
+        return '90-99.9% Probability Markets'
+      case 'prob-80-90':
+        return '80-90% Probability Markets'
+      case 'prob-70-80':
+        return '70-80% Probability Markets'
+      case 'volume':
+        return '📊 Volume Leaders'
+      case 'trending':
+        return '🔥 Trending Now'
+      case 'new':
+        return '✨ Recently Listed'
+      default:
+        return 'Markets'
+    }
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50">
@@ -137,16 +175,16 @@ export default function Dashboard() {
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-6 py-12">
         {/* Filter Tabs */}
-        <FilterTabs activeFilter={activeFilter} setActiveFilter={setActiveFilter} />
+        <FilterTabs activeTab={activeTab} setActiveTab={setActiveTab} />
 
         {/* Status Bar */}
         <div className="flex items-center justify-between mb-8">
           <div>
             <h2 className="text-2xl font-light text-gray-900 mb-2">
-              {activeFilter} Probability Markets
+              {getTabLabel(activeTab)}
             </h2>
             <p className="text-gray-500">
-              {filteredMarkets.length} market{filteredMarkets.length !== 1 ? 's' : ''}
+              {displayedMarkets.length} market{displayedMarkets.length !== 1 ? 's' : ''}
             </p>
           </div>
           <button
@@ -175,7 +213,7 @@ export default function Dashboard() {
         )}
 
         {/* Loading State */}
-        {loading && filteredMarkets.length === 0 && (
+        {loading && displayedMarkets.length === 0 && (
           <div className="flex justify-center items-center h-64">
             <div className="text-center">
               <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-primary-cyan" />
@@ -185,21 +223,21 @@ export default function Dashboard() {
         )}
 
         {/* Markets Grid */}
-        {!loading && filteredMarkets.length > 0 && (
+        {!loading && displayedMarkets.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredMarkets.map((market) => (
+            {displayedMarkets.map((market) => (
               <MarketCard key={market.id} market={market} />
             ))}
           </div>
         )}
 
         {/* Empty State */}
-        {!loading && filteredMarkets.length === 0 && (
+        {!loading && displayedMarkets.length === 0 && (
           <div className="card-neumorphic h-64 flex flex-col items-center justify-center text-center">
             <TrendingUp className="w-12 h-12 text-gray-300 mb-4" />
-            <p className="text-gray-500 text-lg">No markets found in this range</p>
+            <p className="text-gray-500 text-lg">No markets found</p>
             <p className="text-gray-400 text-sm mt-2">
-              Try selecting a different probability range
+              Try selecting a different tab or check back later
             </p>
           </div>
         )}
